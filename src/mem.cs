@@ -11,16 +11,17 @@ class Interrupts {
 
 class STATE {
     byte[] ROM;
-    byte[] WRAM = new byte[8000];
-    byte[] HRAM = new byte[0xfffe - 0xff80];
-    byte[] VRAM = new byte[0x9fff - 0x8000];
-    byte[] IO = new byte[0xff7f - 0xff00];
+    byte[] WRAM = new byte[8000 + 100];
+    byte[] HRAM = new byte[0xfffe - 0xff80 + 100];
+    byte[] VRAM = new byte[0x9fff - 0x8000 + 100];
+    byte[] IO = new byte[0xff7f - 0xff00 + 100];
     public Interrupts interrupts = new Interrupts();
     public bool had_invalid_access = false;
     
     public STATE (string rom_path) {
         Console.WriteLine("READING ROM: {0}", rom_path);
         ROM = System.IO.File.ReadAllBytes(rom_path);
+        // addr(0xff00 + 44) = 0x90;
     }
 
     byte garbage = 0;
@@ -43,7 +44,7 @@ class STATE {
         }
 
         if (idx >= 0x8000 && idx <= 0x9fff) {
-            Console.WriteLine("\x1b[1maccess to vram - graphics not implemented\x1b[0m");
+            // Console.WriteLine("\x1b[1maccess to vram - graphics not implemented\x1b[0m");
             return ref VRAM[idx - 0x8000];
         }
 
@@ -53,11 +54,15 @@ class STATE {
             return ref interrupts.mask;
         } else if (idx == 0xff0f) {
             return ref interrupts.flags;
+        } else if (idx == 0xff44) {
+            // LY
+            IO[0xff44 - 0xff00] = 0x90;
+            return ref IO[idx - 0xff00];//90;
         }
 
         if (idx >= 0xff00 && idx <= 0xff7f)
         {
-            Console.WriteLine("\x1b[1mwrite to io memory - no io is implemented\x1b[0m");
+            // Console.WriteLine("\x1b[1mwrite to io memory - no io is implemented\x1b[0m");
             // had_invalid_access = true;
             return ref IO[idx - 0xff00];
         }

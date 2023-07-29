@@ -70,7 +70,7 @@ struct Flags
 
 class CPU
 {
-    Flags F = new Flags(true, false, false, false); // zero negative half-carry carry
+    public Flags F = new Flags(true, false, false, false); // zero negative half-carry carry
     byte A = 0x11;
     byte garbage = 0xff;
     ushort[] registerCache = new ushort[8];
@@ -99,7 +99,7 @@ class CPU
         get => (ushort)(A << 8 | F.byte_value);
         private set
         {
-            F.byte_value = (byte)(value & 0x00ff);
+            F.byte_value = (byte)(value & 0x00f0);
             A = (byte)(value >> 8);
         }
     }
@@ -145,19 +145,22 @@ class CPU
     public CPU(STATE _s)
     {
         S = _s;
+        reset();
+        no_modify_pc = false;
     }
 
     public void reset()
     {
         PC = 0x0100;
         SP = 0xFFFE;
-        A = 0x11;
+        A = 0x01;
+        F.byte_value = 0xB0;
         B = 0x00;
-        C = 0x00;
-        D = 0xff;
-        E = 0x56;
-        H = 0x00;
-        L = 0x0D;
+        C = 0x13;
+        D = 0x00;
+        E = 0xD8;
+        H = 0x01;
+        L = 0x4D;
         no_modify_pc = true;
     }
     public ushort getShortAtPC()
@@ -197,7 +200,7 @@ class CPU
             3 => E,
             4 => H,
             5 => L,
-            6 => (byte)HL,
+            6 => S.addr(HL),
             7 => A,
             _ => garbage
         };
@@ -205,8 +208,7 @@ class CPU
 
     void ld_rr(int ai, int bi)
     {
-        // ai == 0 bi == 7
-        if (ai == 0)
+        if (ai == 0) // 0x4
         {
             if (bi <= 7)
             {
@@ -217,7 +219,7 @@ class CPU
                 C = getRegByIdx(bi);
             }
         }
-        else if (ai == 1)
+        else if (ai == 1) // 0x5
         {
             if (bi <= 7)
             {
@@ -228,7 +230,7 @@ class CPU
                 E = getRegByIdx(bi);
             }
         }
-        else if (ai == 2)
+        else if (ai == 2) // 0x6
         {
             if (bi <= 7)
             {
@@ -239,7 +241,7 @@ class CPU
                 L = getRegByIdx(bi);
             }
         }
-        else if (ai == 3) // 7 - 4 = 3
+        else if (ai == 3) // 0x7
         {
             if (bi <= 7)
             {
@@ -254,11 +256,31 @@ class CPU
 
     void add_reg(ref byte register, byte value)
     {
-        F.half_carry = (register & 0x0f) == 0x0f;
+        F.half_carry = (register & 0x0f) + (value & 0x0f) > 0x0f;
+        int result = (int)(register) + (int)(value);
+        register = (byte)result;
+        F.zero = ((byte)result) == 0;
         F.negative = false;
-        register += value;
-        F.zero = register == 0;
+        F.carry = result > 0xff;
     }
+
+    ushort add_wide(ushort wr, int v) {
+        var result = (int)wr + v;
+        F.carry = result > 0xffff;
+        // F.zero = false;
+        F.half_carry = (wr & 0xfff) > (result & 0xfff);
+        F.negative = false;
+        return (ushort)(result);
+    }
+
+    void inc_reg(ref byte register)
+    {
+        F.half_carry = (register & 0x0f) == 0x0f;
+        register++;
+        F.zero = register == 0;
+        F.negative = false;
+    }
+
     delegate void register_method(ref byte i);
     void al_rr(int op_operand, register_method left, register_method right)
     {
@@ -269,6 +291,39 @@ class CPU
         else
         {
             right(ref A);
+        }
+    }
+
+    void cb_rr(int op_operand, register_method left, register_method right) {
+        var method = left;
+        if (op_operand>=7) {
+            method = right;
+        }
+        switch (op_operand % 8) {
+            case 0:
+                method(ref B);
+                break;
+            case 1:
+                method(ref C);
+                break;
+            case 2:
+                method(ref D);
+                break;
+            case 3:
+                method(ref E);
+                break;
+            case 4:
+                method(ref H);
+                break;
+            case 5:
+                method(ref L);
+                break;
+            case 6:
+                method(ref S.addr(HL));
+                break;
+            case 7:
+                method(ref A);
+                break;
         }
     }
 
@@ -285,7 +340,7 @@ class CPU
     {
         F.negative = false;
         F.carry = false;
-        F.half_carry = false;
+        F.half_carry = true;
         reg &= v;
         F.zero = reg == 0;
     }
@@ -301,9 +356,10 @@ class CPU
 
     void cp_reg(ref byte reg, byte v)
     {
-        var old = reg;
-        sub_reg(ref reg, v);
-        reg = old;
+        F.zero = reg == v;
+        F.negative = true;
+        F.half_carry = (v & 0x0f) > (reg & 0x0f);
+        F.carry = v > reg;
     }
 
     // TODO: See if inlining helps any, https://stackoverflow.com/questions/473782/inline-functions-in-c
@@ -311,16 +367,24 @@ class CPU
     {
         F.negative = true;
         F.carry = value > register;
-        F.half_carry = (value & 0x0f) > (register & 0x0f);
+        F.half_carry = (value & 0x0f) > (register & 0x0f);// 1 > ... = false
         register -= value;
         F.zero = register == 0;
+    }
+
+    void dec_reg(ref byte register)
+    {
+        F.half_carry = (register & 0x0f) == 0;
+        register = (byte)(register - 1);
+        F.zero = register == 0;
+        F.negative = true;
     }
 
     bool no_modify_pc = false;
     public void Tick()
     {
         cache_store();
-        byte op = S.addr(PC);
+        var op = S.addr(PC);
         switch (op)
         {
             case 0x00:
@@ -348,6 +412,12 @@ class CPU
             case 0x23:
                 HL++;
                 return;
+            case 0x26:
+                H = getByteAtPC();
+                return;
+            case 0x2d:
+                dec_reg(ref L);
+                return;
             case 0x03:
                 BC++;
                 return;
@@ -364,25 +434,28 @@ class CPU
                 S.addr(DE) = A;
                 return;
             case 0x1c:
-                add_reg(ref E, 1);
+                inc_reg(ref E);//add_reg(ref E, 1);
                 return;
             case 0x1d:
-                sub_reg(ref E, 1);
+                dec_reg(ref E);//sub_reg(ref E, 1);
                 return;
             case 0x0d:
-                sub_reg(ref C, 1);
+                dec_reg(ref C);
+                // sub_reg(ref C, 1);
                 return;
             case 0x14:
-                add_reg(ref D, 1);
+                inc_reg(ref D);//add_reg(ref D, 1);
                 return;
             case 0x24:
-                add_reg(ref H, 1);
+                inc_reg(ref H);
+                // add_reg(ref H, 1);
                 return;
             case 0x32:
-                A = S.addr(HL--);
+                S.addr(HL--) = A;
+                // A = S.addr(HL--);
                 return;
             case 0x22:
-                S.addr(H++) = A;
+                S.addr(HL++) = A;
                 return;
             case 0x1a:
                 A = S.addr(DE);
@@ -390,7 +463,33 @@ class CPU
             case 0x0a:
                 A = S.addr(BC);
                 return;
+            case 0x27:
 
+                if (!F.negative) {
+                    if (F.carry || A > 0x99) {
+                        F.carry = true;
+                        A += 0x60;
+                    }
+                    if (F.half_carry || (A & 0x0f) > 0x09) {
+                        // F.half_carry = false;
+                        A += 0x06;
+                    }
+                } else if (F.carry && F.half_carry) {
+                    A += 0x9A;
+                    // F.half_carry = false;
+                } else if (F.carry) {
+                    A += 0xA0;
+                } else if (F.half_carry) {
+                    A += 0xFA;
+                    // F.half_carry = false;
+                }
+
+                F.half_carry = false;
+                F.zero = A == 0;
+                return;
+            case 0x29:
+                HL = add_wide(HL, HL);
+                return;
             case 0xe0:
                 S.addr((ushort)(0xff00 + getByteAtPC())) = A;
                 return;
@@ -398,7 +497,7 @@ class CPU
                 A = S.addr((ushort)(0xff00 + getByteAtPC()));
                 return;
             case 0xfe:
-                cp_reg(ref A, A);
+                cp_reg(ref A, getByteAtPC());
                 return;
             case 0x20:
                 if (!F.zero)
@@ -407,6 +506,25 @@ class CPU
                     PC = (ushort)(PC + (sbyte)getByteAtPC());
                     // no_modify_pc = true;
                 }
+                return;
+            case 0xe9:
+                PC = HL;
+                no_modify_pc=true;
+                return;
+            case 0x3c:
+                inc_reg(ref A);
+                return;
+            case 0xc2:
+                if (!F.zero) {
+                    PC = getShortAtPC();
+                    no_modify_pc=true;
+                }
+                return;
+            case 0x04:
+                inc_reg(ref B);
+                return;
+            case 0x0c:
+                inc_reg(ref C);
                 return;
             case 0x28:
                 if (F.zero)
@@ -425,16 +543,28 @@ class CPU
                 }
                 return;
             case 0x1f:
-                int b0 = A & 0x01;
-                F.carry = b0 == 1;
-                F.negative = false;
-                F.half_carry = false;
+                var c = F.carry ? 1 << 7 : 0;
+                F.carry = (A & (1 << 0)) == 1;
                 A >>= 1;
-                F.zero = A == 0;
+                A |= (byte)c;
+                F.negative = false;
+                F.zero = false;
+                F.half_carry = false;
+                return;
+            case 0xee:
+                xor_reg(ref A, getByteAtPC());
+                return;
+            case 0x25:
+                dec_reg(ref H);
+                return;
+            case 0x3d:
+                dec_reg(ref A);
                 return;
             case 0xce:
                 add_reg(ref A, (byte)(getByteAtPC() + (F.carry ? 1 : 0)));
                 return;
+            // case 0xc8:
+
             case 0x0e:
                 C = getByteAtPC();
                 return;
@@ -493,7 +623,7 @@ class CPU
                 // RST 38h
                 writeShortAtSP(PC);
                 PC = 0x0000 + 0x08;
-                no_modify_pc=true;
+                no_modify_pc = true;
                 return;
             case 0xEA:
                 var addr = getShortAtPC();
@@ -520,7 +650,37 @@ class CPU
                 PC = getShortAtPC();
                 no_modify_pc = true;
                 return;
-
+            case 0xc8:
+                if (F.zero)
+                {
+                    PC = getShortAtSP();
+                    no_modify_pc = true;
+                }
+                return;
+            case 0xc0:
+                if (F.zero)
+                {
+                    PC = getShortAtSP();
+                    no_modify_pc = true;
+                }
+                return;
+            case 0xd8:
+                if (F.carry)
+                {
+                    PC = getShortAtSP();
+                    no_modify_pc = true;
+                }
+                return;
+            case 0xd0:
+                if (!F.carry)
+                {
+                    PC = getShortAtSP();
+                    no_modify_pc = true;
+                }
+                return;
+            case 0x35:
+                dec_reg(ref S.addr(HL));
+                return;
             case 0xC4:
                 if (!F.zero)
                 {
@@ -548,22 +708,25 @@ class CPU
                 B = getByteAtPC();
                 return;
             case 0x05:
-                sub_reg(ref B, 1);
+                dec_reg(ref B);//sub_reg(ref B, 1);
                 return;
             case 0x2c:
-                add_reg(ref L, 1);
+                inc_reg(ref L);
+                // add_reg(ref L, 1);
                 return;
             // case 0x0e:
             //     C = getByteAtPC();
             //     return;
-
+            case 0xCB:
+                wideInstruction();
+                return;
             default:
                 // Console.WriteLine("[!!] Unexpected instruction: {0,2:x}", op);
                 break;
         }
 
-        int op_id = op >> 4;
-        int op_operand = op & 0x0f;
+        var op_id = op >> 4;
+        var op_operand = op & 0x0f;
 
         switch (op_id)
         {
@@ -589,14 +752,134 @@ class CPU
         }
 
         Console.WriteLine("\x1b[31m[!!] Unexpected instruction: {0:x2}\x1b[0m", op);
+        found_unimplemented_instr = true;
     }
+
+
+    void wideInstruction() {
+        var opcode = getByteAtPC();
+        var op_id = opcode >> 4;
+        var op_operand = opcode & 0x0f;
+        switch (op_id) {
+            case 0x0:
+                cb_rr(op_operand, (ref byte x) => {
+                    // RLC
+                    F.negative = false;
+                    F.half_carry = false;
+                    F.carry = (x & 1 << 7) == 1;
+                    x <<= 1;
+                    x |= (byte)(F.carry ? 0x01 : 0);
+                    F.zero = x == 0;
+                },
+                (ref byte x) => {
+                    // RRC
+                    F.negative = false;
+                    F.half_carry = false;
+                    F.carry = (x & 1 << 0) == 1;
+                    x >>= 1;
+                    x |= (byte)(F.carry ? 1 << 7 : 0);
+                    F.zero = x == 0;
+                });
+                return;
+            case 0x1:
+                cb_rr(op_operand, (ref byte x) =>
+                {
+                    // RL
+                    F.negative = false;
+                    F.half_carry = false;
+                    var oc = F.carry;
+                    F.carry = (x & 1 << 7) == 1;
+                    x <<= 1;
+                    x |= (byte)(oc ? 1 : 0);
+                    F.zero = x == 0;
+                },
+                (ref byte x) =>
+                {
+                    // RR
+                    F.negative = false;
+                    F.half_carry = false;
+                    var oc = F.carry;
+                    F.carry = (x & 1 << 0) == 1;
+                    x >>= 1;
+                    x |= (byte)(oc ? 1 << 7 : 0);
+                    F.zero = x == 0;
+                });
+                return;
+            case 0x2:
+                cb_rr(op_operand, (ref byte x) =>
+                {
+                    // SLA
+                    F.negative = false;
+                    F.half_carry = false;
+                    var oc = F.carry;
+                    F.carry = (x & 1 << 7) == 1;
+                    x <<= 1;
+                    // x &= 0xfe;
+                    F.zero = x == 0;
+                },
+                (ref byte x) =>
+                {
+                    F.negative = false;
+                    F.half_carry = false;
+                    var oc = F.carry;
+                    F.carry = (x & 1 << 0) == 1;
+                    x = (byte)((x & 1 << 7) | x >> 1);
+                    F.zero = x == 0;
+                });
+                return;
+            case 0x3:
+                cb_rr(op_operand, (ref byte x) =>
+                {
+                    // SWAP
+                    F.negative = false;
+                    F.half_carry = false;
+                    F.carry = false;
+                    x = (byte)(x >> 4 | x << 4);
+                    F.zero = x == 0;
+                },
+                (ref byte x) =>
+                {
+                    // SRL
+                    F.negative = false;
+                    F.half_carry = false;
+                    F.carry = (x & 1 << 0) == 1;
+                    x >>= 1;
+                    F.zero = x == 0;
+                });
+                return;
+            case 0x4:
+                cb_rr(op_operand, (ref byte x) =>
+                {
+                    // SWAP
+                    F.negative = false;
+                    F.half_carry = false;
+                    F.carry = false;
+                    x = (byte)(x >> 4 | x << 4);
+                    F.zero = x == 0;
+                },
+                (ref byte x) =>
+                {
+                    // SRL
+                    F.negative = false;
+                    F.half_carry = false;
+                    F.carry = (x & 1 << 0) == 1;
+                    x >>= 1;
+                    F.zero = x == 0;
+                });
+                return;
+        }
+    }
+
+    public bool found_unimplemented_instr = false;
     public void incrementPC(int v)
     {
         if (!no_modify_pc)
         {
             PC += (ushort)v;
-        } else {
-            Console.WriteLine("skipping increment cuz of jump / call / ret");
+        }
+        else
+        {
+            // Console.WriteLine("skipping increment cuz of jump / call / ret");
             no_modify_pc = false;
         }
     }
