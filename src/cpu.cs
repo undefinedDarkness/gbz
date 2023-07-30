@@ -265,6 +265,17 @@ class CPU
         }
     }
 
+    void sbc_reg(ref byte reg, int v) {
+        short carry = F.carry ? (short)1 : (short)0;
+        short sum = (short)(A - (short)v - carry);
+        byte total = (byte)sum;
+        F.zero = total == 0;
+        F.half_carry = (short)(A & 0x0f) - (short)(v & 0x0f) - carry < 0;
+        F.carry = sum < 0;
+        F.negative = true;
+        A = total;
+    }
+
     void add_reg(ref byte register, byte value)
     {
         F.half_carry = (register & 0x0f) + (value & 0x0f) > 0x0f;
@@ -387,6 +398,18 @@ class CPU
         F.zero = register == 0;
     }
 
+    void adc_reg(ref byte reg, byte v) {
+        short carry = F.carry ? (short)1 : (short)0;
+        byte o1 = A;
+        byte o2 = v;
+        short result = (short)((short)A + (short)v + carry);
+        A = (byte)result;
+        F.zero = (byte)result == 0;
+        F.negative = false;
+        F.half_carry = (o1 & 0xf) + (o2 & 0xf) + (byte)(carry) > 0xf;
+        F.carry = result > 0xff;
+    }
+
     void dec_reg(ref byte register)
     {
         F.half_carry = (register & 0x0f) == 0;
@@ -417,6 +440,12 @@ class CPU
                 PC = getShortAtSP();
                 no_modify_pc = true;
                 return;
+            case 0x36:
+                S.addr(HL) = getByteAtPC();
+                return;
+            case 0x16:
+                D = getByteAtPC();
+                return;
             case 0xc3:
                 PC = getShortAtPC();
                 no_modify_pc = true;
@@ -441,6 +470,9 @@ class CPU
                 return;
             case 0x33:
                 SP++;
+                return;
+            case 0xde:
+                sbc_reg(ref A, getByteAtPC());
                 return;
             case 0x11:
                 DE = getShortAtPC();
@@ -632,7 +664,7 @@ class CPU
                 dec_reg(ref A);
                 return;
             case 0xce:
-                add_reg(ref A, (byte)(getByteAtPC() + (F.carry ? 1 : 0)));
+                adc_reg(ref A, getByteAtPC());
                 return;
             // case 0xc8:
 
@@ -810,10 +842,10 @@ class CPU
                 ld_rr(op_id - 4, op_operand);
                 return;
             case 0x8:
-                al_rr(op_operand, (ref byte x) => add_reg(ref x, getRegByIdx(op_operand)), (ref byte x) => add_reg(ref x, (byte)(getRegByIdx(op_operand) + (F.carry ? 1 : 0))));
+                al_rr(op_operand, (ref byte x) => add_reg(ref x, getRegByIdx(op_operand)), (ref byte x) => adc_reg(ref x, getRegByIdx(op_operand)));
                 return;
             case 0x9:
-                al_rr(op_operand, (ref byte x) => sub_reg(ref x, getRegByIdx(op_operand)), (ref byte x) => sub_reg(ref x, (byte)(getRegByIdx(op_operand) + (F.carry ? 1 : 0))));
+                al_rr(op_operand, (ref byte x) => sub_reg(ref x, getRegByIdx(op_operand)), (ref byte x) => sbc_reg(ref x, getRegByIdx(op_operand)));
                 return;
             case 0xB:
                 al_rr(op_operand, (ref byte x) => or_reg(ref x, getRegByIdx(op_operand)), (ref byte x) => cp_reg(ref x, getRegByIdx(op_operand)));

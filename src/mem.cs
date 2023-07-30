@@ -19,8 +19,10 @@ class STATE {
     public Interrupts interrupts = new Interrupts();
     public Debugger? debug_hook = null;
     public bool had_invalid_access = false;
+    string rom_path_ = "";
     
     public STATE (string rom_path) {
+        rom_path_ = rom_path;
         Console.WriteLine("READING ROM: {0}", rom_path);
         ROM = System.IO.File.ReadAllBytes(rom_path);
     }
@@ -33,6 +35,7 @@ class STATE {
         Array.Clear(HRAM);
         Array.Clear(VRAM);
         Array.Clear(IO);
+        ROM = System.IO.File.ReadAllBytes(rom_path_);
     }
 
     public ref byte addrNoHook(ushort idx) {

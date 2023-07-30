@@ -14,13 +14,15 @@ class Debugger {
     STATE S;
     CPU C;
     StreamReader logfile;
+    string log_path = "";
     // string[] logFile;
-    public Debugger(STATE _s, CPU _c) {
+    public Debugger(STATE _s, CPU _c, string rom_path) {
         S = _s;
         C = _c;
         S.debug_hook = this;
         var opcodes_json = System.IO.File.ReadAllText("src/opcodes.json").Split('\n');   
-        logfile = new StreamReader("gb-test-roms/cpu_instrs/individual/03-op sp,hl.txt");
+        log_path = rom_path.Replace(".gb", ".txt");
+        logfile = new StreamReader(log_path);
         foreach (string opcode in opcodes_json) {
             var instruction = System.Text.Json.JsonSerializer.Deserialize<Instruction>(opcode);
             if (instruction.prefix == null) {
@@ -234,7 +236,7 @@ takeInput:
             printMemoryAtAddress(addr);
         } else if (userinput[0] == "reset") {
             C.reset();
-            logfile = new StreamReader("gb-test-roms/cpu_instrs/individual/01-special.txt");
+            logfile = new StreamReader(log_path);
             S.reset();
             printState(S.addrNoHook(C.PC), false);
             return;
@@ -276,6 +278,20 @@ takeInput:
         }
         goto takeInput;
     }
+
+    // Flags Register
+    //----------------
+    // Bit 0 - 3 => 0
+    // Bit 4     => CARRY FLAG
+    // Bit 5     => HALF CARRY FLAG
+    // Bit 6     => SUBTRACTION FLAG
+    // Bit 7     => ZERO FLAG
+    // C = 1100       |            | Subtraction | Zero
+    // B = 1011 Carry | Half Carry |             | Zero
+    // A = 1010       | Half Carry |             | Zero
+    // 7 = 0111 Carry | Half Carry | Subtraction 
+    // 3 = 0011 Carry | Half Carry |
+    // 2 = 0010       | Half Carry |
 
     public void IncrementPC() {
         C.incrementPC(getInstruction(opcode).bytes);

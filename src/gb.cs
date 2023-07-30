@@ -6,7 +6,7 @@ class GBEmulator {
         state = new STATE(rom);
         cpu = new CPU(state);
         // state.setDebugger(dbg);
-        dbg = new Debugger(state, cpu);
+        dbg = new Debugger(state, cpu, rom);
     }
 
     public void run() {
