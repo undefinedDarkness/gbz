@@ -149,6 +149,17 @@ class CPU
         no_modify_pc = false;
     }
 
+    public void resetBGB()
+    {
+        PC = 0x0100;
+        SP = 0xFFFE;
+        AF = 0x1180;
+        BC = 0x0000;
+        DE = 0xFF56;
+        HL = 0x000D;
+        no_modify_pc = true;
+    }
+
     public void reset()
     {
         PC = 0x0100;
@@ -264,8 +275,9 @@ class CPU
         F.carry = result > 0xff;
     }
 
-    ushort add_wide(ushort wr, int v) {
-        var result = (int)wr + v;
+    ushort add_wide(int wr, int v)
+    {
+        var result = wr + v;
         F.carry = result > 0xffff;
         // F.zero = false;
         F.half_carry = (wr & 0xfff) > (result & 0xfff);
@@ -294,12 +306,15 @@ class CPU
         }
     }
 
-    void cb_rr(int op_operand, register_method left, register_method right) {
+    void cb_rr(int op_operand, register_method left, register_method right)
+    {
         var method = left;
-        if (op_operand>=7) {
+        if (op_operand >= 7)
+        {
             method = right;
         }
-        switch (op_operand % 8) {
+        switch (op_operand % 8)
+        {
             case 0:
                 method(ref B);
                 break;
@@ -430,9 +445,54 @@ class CPU
             case 0x11:
                 DE = getShortAtPC();
                 return;
-            case 0x12:
-                S.addr(DE) = A;
+            case 0x08:
+                var address = getShortAtPC();
+                S.addr(address++) = (byte)(SP & 0x00ff);
+                S.addr(address) = (byte)(SP >> 8);
                 return;
+            case 0x3b:
+                SP--;
+                return;
+            case 0x39:
+                // var ohl = HL;
+                HL = add_wide(HL, SP);
+                return;
+            case 0xe8:
+                {
+                    var vi = (sbyte)getByteAtPC();
+                    var res = (ushort)((int)vi + (int)SP);
+                    var tmp = res ^ (ushort)vi ^ SP;
+                    SP = res;
+                    F.zero = false;
+                    F.negative = false;
+                    F.half_carry = (tmp & 0x10) == 0x10;
+                    F.carry = (tmp & 0x100) == 0x100;
+                    return;
+                }
+            case 0xf8:
+                {
+                    var vi = (sbyte)getByteAtPC();
+                    var res = (ushort)((int)vi + (int)SP);
+                    var tmp = res ^ (ushort)vi ^ SP;
+                    HL = res;
+                    F.zero = false;
+                    F.negative = false;
+                    F.half_carry = (tmp & 0x10) == 0x10;
+                    F.carry = (tmp & 0x100) == 0x100;
+                    return;
+                }
+            case 0xf9:
+                SP = HL;
+                return;
+            // -- 
+            case 0x12:
+                // if (DE == 0xc800)
+                S.addr(DE) = A;
+                // S.addr(DE) = A;
+                if (DE == 0xc800)
+                    Console.WriteLine("LD DE, A WROTE {0:X2} to {1:X4}", A, DE);
+                return;
+            // --
             case 0x1c:
                 inc_reg(ref E);//add_reg(ref E, 1);
                 return;
@@ -465,21 +525,30 @@ class CPU
                 return;
             case 0x27:
 
-                if (!F.negative) {
-                    if (F.carry || A > 0x99) {
+                if (!F.negative)
+                {
+                    if (F.carry || A > 0x99)
+                    {
                         F.carry = true;
                         A += 0x60;
                     }
-                    if (F.half_carry || (A & 0x0f) > 0x09) {
+                    if (F.half_carry || (A & 0x0f) > 0x09)
+                    {
                         // F.half_carry = false;
                         A += 0x06;
                     }
-                } else if (F.carry && F.half_carry) {
+                }
+                else if (F.carry && F.half_carry)
+                {
                     A += 0x9A;
                     // F.half_carry = false;
-                } else if (F.carry) {
+                }
+                else if (F.carry)
+                {
                     A += 0xA0;
-                } else if (F.half_carry) {
+                }
+                else if (F.half_carry)
+                {
                     A += 0xFA;
                     // F.half_carry = false;
                 }
@@ -488,7 +557,8 @@ class CPU
                 F.zero = A == 0;
                 return;
             case 0x29:
-                HL = add_wide(HL, HL);
+                var ohl = HL;
+                HL = add_wide(ohl, ohl);
                 return;
             case 0xe0:
                 S.addr((ushort)(0xff00 + getByteAtPC())) = A;
@@ -509,15 +579,16 @@ class CPU
                 return;
             case 0xe9:
                 PC = HL;
-                no_modify_pc=true;
+                no_modify_pc = true;
                 return;
             case 0x3c:
                 inc_reg(ref A);
                 return;
             case 0xc2:
-                if (!F.zero) {
+                if (!F.zero)
+                {
                     PC = getShortAtPC();
-                    no_modify_pc=true;
+                    no_modify_pc = true;
                 }
                 return;
             case 0x04:
@@ -569,10 +640,12 @@ class CPU
                 C = getByteAtPC();
                 return;
             case 0x2a:
-                A = S.addr(HL++);
+                A = S.addr(HL);
+                HL++;
                 return;
             case 0x3a:
-                A = S.addr(HL--);
+                A = S.addr(HL);
+                HL--;
                 return;
             case 0x31:
                 SP = getShortAtPC();
@@ -756,13 +829,16 @@ class CPU
     }
 
 
-    void wideInstruction() {
+    void wideInstruction()
+    {
         var opcode = getByteAtPC();
         var op_id = opcode >> 4;
         var op_operand = opcode & 0x0f;
-        switch (op_id) {
+        switch (op_id)
+        {
             case 0x0:
-                cb_rr(op_operand, (ref byte x) => {
+                cb_rr(op_operand, (ref byte x) =>
+                {
                     // RLC
                     F.negative = false;
                     F.half_carry = false;
@@ -771,7 +847,8 @@ class CPU
                     x |= (byte)(F.carry ? 0x01 : 0);
                     F.zero = x == 0;
                 },
-                (ref byte x) => {
+                (ref byte x) =>
+                {
                     // RRC
                     F.negative = false;
                     F.half_carry = false;

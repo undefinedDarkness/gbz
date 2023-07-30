@@ -5,12 +5,13 @@ class GBEmulator {
     public GBEmulator(string rom) {
         state = new STATE(rom);
         cpu = new CPU(state);
+        // state.setDebugger(dbg);
         dbg = new Debugger(state, cpu);
     }
 
     public void run() {
         while (true) {
-            dbg.DebugTick();
+            dbg.DebugTick(); // here opcode is set
             cpu.Tick();
             dbg.IncrementPC();
         }

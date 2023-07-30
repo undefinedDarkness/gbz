@@ -11,50 +11,76 @@ class Interrupts {
 
 class STATE {
     byte[] ROM;
-    byte[] WRAM = new byte[8000 + 100];
-    byte[] HRAM = new byte[0xfffe - 0xff80 + 100];
-    byte[] VRAM = new byte[0x9fff - 0x8000 + 100];
-    byte[] IO = new byte[0xff7f - 0xff00 + 100];
+    byte[] WRAM1 = new byte[4096];
+    byte[] WRAM2 = new byte[4096];
+    byte[] HRAM = new byte[0xfffe - 0xff80];
+    byte[] VRAM = new byte[0x9fff - 0x8000];
+    byte[] IO = new byte[0xff7f - 0xff00];
     public Interrupts interrupts = new Interrupts();
+    public Debugger? debug_hook = null;
     public bool had_invalid_access = false;
     
     public STATE (string rom_path) {
         Console.WriteLine("READING ROM: {0}", rom_path);
         ROM = System.IO.File.ReadAllBytes(rom_path);
-        // addr(0xff00 + 44) = 0x90;
     }
 
     byte garbage = 0;
 
-    public ref byte addr(ushort idx) {
-        if (idx <= 0x7fff) {
+    public void reset() {
+        Array.Clear(WRAM1);
+        Array.Clear(WRAM2);
+        Array.Clear(HRAM);
+        Array.Clear(VRAM);
+        Array.Clear(IO);
+    }
+
+    public ref byte addrNoHook(ushort idx) {
+        // if (idx == 0xc800) {
+            // debug_hook.memAccessHook
+        // }
+        if (idx <= 0x7fff)
+        {
+            // Console.WriteLine("Returning ROM address : {0:X4}",)
             return ref ROM[idx];
-        } 
-
-        if (idx >= 0xc000 && idx <= 0xcfff) {
-            return ref WRAM[idx - 0xc000];
-        } 
-
-        if (idx >= 0xd000 && idx <= 0xdfff) {
-            return ref WRAM[idx - 0xd000];
         }
 
-        if (idx >= 0xff80 && idx <= 0xfffe) {
+        if (idx >= 0xc000 && idx <= 0xcfff)
+        {
+            if (idx - 0xc000 >= WRAM1.Length) {
+                Console.WriteLine("{0:X4} is in bounds for WRAM1 but does not fit", idx);
+                return ref garbage;
+            }
+            return ref WRAM1[idx - 0xc000];
+        }
+
+        if (idx >= 0xd000 && idx <= 0xdfff)
+        {
+            return ref WRAM2[idx - 0xd000];
+        }
+
+        if (idx >= 0xff80 && idx <= 0xfffe)
+        {
             return ref HRAM[idx - 0xff80];
         }
 
-        if (idx >= 0x8000 && idx <= 0x9fff) {
-            // Console.WriteLine("\x1b[1maccess to vram - graphics not implemented\x1b[0m");
+        if (idx >= 0x8000 && idx <= 0x9fff)
+        {
+            // Console.WriteLine("access to vram which is not implemented {0:x4}", idx);
             return ref VRAM[idx - 0x8000];
         }
 
         // -- IO --
-
-        if (idx == 0xffff) {
+        if (idx == 0xffff)
+        {
             return ref interrupts.mask;
-        } else if (idx == 0xff0f) {
+        }
+        else if (idx == 0xff0f)
+        {
             return ref interrupts.flags;
-        } else if (idx == 0xff44) {
+        }
+        else if (idx == 0xff44)
+        {
             // LY
             IO[0xff44 - 0xff00] = 0x90;
             return ref IO[idx - 0xff00];//90;
@@ -62,13 +88,19 @@ class STATE {
 
         if (idx >= 0xff00 && idx <= 0xff7f)
         {
-            // Console.WriteLine("\x1b[1mwrite to io memory - no io is implemented\x1b[0m");
-            // had_invalid_access = true;
+            // Console.WriteLine("access to io memory which is not implemented! {0:x4}", idx);
             return ref IO[idx - 0xff00];
         }
 
         Console.WriteLine("\x1b[1maccess to {0:x4} not implemented\x1b[0m", idx);
         had_invalid_access = true;
         return ref garbage;
+    }
+
+    public ref byte addr(ushort idx) {
+        if (debug_hook != null)
+            debug_hook.memAccessHook(idx);
+
+        return ref addrNoHook(idx);
     }
 }

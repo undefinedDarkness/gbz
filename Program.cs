@@ -1,9 +1,11 @@
-﻿static class PP {
+﻿static class PP
+{
 
-public static void Main(string[] args) {
+    public static void Main(string[] args)
+    {
 
-var GB = new GBEmulator("gb-test-roms/cpu_instrs/individual/01-special.gb");
-GB.run();
-Console.WriteLine("dafaq");
-}
+        var GB = new GBEmulator("gb-test-roms/cpu_instrs/individual/03-op sp,hl.gb");
+        GB.run();
+        Console.WriteLine("dafaq");
+    }
 }

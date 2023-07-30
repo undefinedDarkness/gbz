@@ -18,8 +18,9 @@ class Debugger {
     public Debugger(STATE _s, CPU _c) {
         S = _s;
         C = _c;
+        S.debug_hook = this;
         var opcodes_json = System.IO.File.ReadAllText("src/opcodes.json").Split('\n');   
-        logfile = new StreamReader("gb-test-roms/cpu_instrs/individual/01-special.txt");
+        logfile = new StreamReader("gb-test-roms/cpu_instrs/individual/03-op sp,hl.txt");
         foreach (string opcode in opcodes_json) {
             var instruction = System.Text.Json.JsonSerializer.Deserialize<Instruction>(opcode);
             if (instruction.prefix == null) {
@@ -60,7 +61,7 @@ class Debugger {
     void printMemoryAtAddress(int addr) {
         for (int i = 0; i < 10; i++) {
             for (int j = 0; j < 16; j++) {
-                Console.Write($"{S.addr((ushort)(addr + j + i*16)).ToString("X2")} ");
+                Console.Write($"{S.addrNoHook((ushort)(addr + j + i*16)).ToString("X2")} ");
             }
             Console.WriteLine();
         }
@@ -68,7 +69,7 @@ class Debugger {
 
     void printStack() {
         for (int start = C.SP; start < C.SP + 8; start++) {
-            Console.Write($"{S.addr((ushort)start).ToString("x2")} ");
+            Console.Write($"{S.addrNoHook((ushort)start).ToString("x2")} ");
         }
         Console.WriteLine();
     }
@@ -131,7 +132,7 @@ class Debugger {
             C.HL & 0x00ff,
             C.SP,
             C.PC,
-            S.addr(C.PC), S.addr((ushort)(C.PC + 1)), S.addr((ushort)(C.PC + 2)), S.addr((ushort)(C.PC + 3)));
+            S.addrNoHook(C.PC), S.addrNoHook((ushort)(C.PC + 1)), S.addrNoHook((ushort)(C.PC + 2)), S.addrNoHook((ushort)(C.PC + 3)));
         if (fromLog != fromState) {
             Console.WriteLine("\x1b[31mDETECTED DISCREPANCY @ {0:X4}:\x1b[0m\n\tLOG: {1}\n\tSTA: {2}", C.PC, fromLog, fromState);
             return false;
@@ -139,47 +140,77 @@ class Debugger {
         return true;
     }
 
+    HashSet<ushort> watch_addr = new HashSet<ushort>( 0xc800 );
+    public void memAccessHook(int addr) {
+        if (watch_addr.Contains((ushort)addr)) {
+            var instr = getInstruction(opcode);
+            Console.WriteLine("\x1b[1mAccess to {0:X4} by op: ({3:X4}) {1} @ {2:X4}\x1b[0m", addr, instr.mnemonic, C.PC, instr.opcode);
+            stepDebug=true;
+        }
+    }
+
     bool stop_at_invalid_access = true;
+    bool cross_verify = true;
+    bool no_print_every_instr = true;
     string serial_buffer = "";
+    int contN = 0;
     public void DebugTick() {
-        opcode = S.addr(C.PC);
-        bool inBreakpoint = breakpoints.Contains(C.PC) || breakinstrs.Contains(opcode);
+        opcode = S.addrNoHook(C.PC);
+        bool inBreakpoint = breakpoints.Contains(C.PC);// || breakinstrs.Contains(opcode);
         if (inBreakpoint) {
+            Console.WriteLine("reached breakpoint");
             stepDebug = true;
         }
 
         var name = instructions[opcode].mnemonic;
 
         if ((S.had_invalid_access && stop_at_invalid_access) || C.found_unimplemented_instr) {
+            Console.WriteLine("activated debugger cuz of invalid memory access / unimplemented instr");
             stepDebug = true;
             S.had_invalid_access = false;
         }
 
-        if (S.addr(0xff02) == 0x81) {
-            char c = (char)S.addr(0xff01);
-            serial_buffer += c;// Console.WriteLine($"SERIAL OUTPUT: {(char)S.addr(0xff01)}");
+        if (S.addrNoHook(0xff02) == 0x81) {
+            char c = (char)S.addrNoHook(0xff01);
+            serial_buffer += c;// Console.WriteLine($"SERIAL OUTPUT: {(char)S.addrNoHook(0xff01)}");
             if (c == '\n') {
                 Console.Write("\x1b[1mSERIAL: \x1b[0m");
                 Console.Write(serial_buffer);
             }
-            S.addr(0xff02) = 0;
+            S.addrNoHook(0xff02) = 0;
         }
 
-        if (!verifyCorrectState()) {
+        if (cross_verify && !verifyCorrectState()) {
             stepDebug = true;
         }
+
+        if (inBreakpoint || !no_print_every_instr)
+            printState(opcode, inBreakpoint);
 
         if (!stepDebug)
             return;
 
-        printState(opcode, inBreakpoint);
-
 takeInput:
+
+        if (contN-- > 0) {
+            C.found_unimplemented_instr = false;
+            stepDebug = false;
+            return;
+        }
+
         var userinput = Console.ReadLine()!.Split(" ");
         if (userinput[0] == "c" || userinput[0] == "n") {
             return;
-        } else if (userinput[0] == "b") {
-            breakpoints.Add(System.Convert.ToUInt16(userinput[1], 16));
+        } else if (userinput[0] == "show") {
+            printState(opcode, false);
+            return;
+        } else if (userinput[0] == "contn") {
+            contN = Int32.Parse(userinput[1]) + (100 - 64);
+            return;
+        }else if (userinput[0] == "b") {
+            var bp = System.Convert.ToUInt16(userinput[1], 16);
+            breakpoints.Add(bp);
+            Console.WriteLine("Added breakpoint 0x{0:X4}", bp);
         } else if (userinput[0] == "bins") {
             breakinstrs.Add(System.Convert.ToByte(userinput[1], 16));
         }else if (userinput[0] == "ex") {
@@ -204,11 +235,19 @@ takeInput:
         } else if (userinput[0] == "reset") {
             C.reset();
             logfile = new StreamReader("gb-test-roms/cpu_instrs/individual/01-special.txt");
+            S.reset();
+            printState(S.addrNoHook(C.PC), false);
             return;
-        } else if (userinput[0] == "showprev") {
+        } else if (userinput[0] == "resetbgb"){
+            C.resetBGB();
+            S.reset();
+            printState(S.addrNoHook(C.PC), false);
+            cross_verify = false;
+            return;
+        }else if (userinput[0] == "showprev") {
             Console.WriteLine("Please `reset` if you want to continue discrepancy checking");
             C.rewind();
-            printState(S.addr(C.PC), false);
+            printState(S.addrNoHook(C.PC), false);
             // return;
         } else if (userinput[0] == "stopinvalidacc") {
             stop_at_invalid_access = !stop_at_invalid_access; // TODO: make this work correctly
@@ -222,14 +261,23 @@ takeInput:
             Console.WriteLine("Z: [{0}] N: [{1}] HC: [{2}] C: [{3}]", C.F.zero, C.F.negative, C.F.half_carry, C.F.carry);
         } else if (userinput[0] == "AF") {
             Console.WriteLine("{0:X4}", C.AF);
-        }     
+        }  else if (userinput[0] == "HL") {
+            Console.WriteLine("{0:X4}", C.HL);
+        } else if (userinput[0] == "PC") {
+            Console.WriteLine("{0:X4}", C.PC);
+        } else if (userinput[0] == "tgverify") {
+            cross_verify = !cross_verify;
+        } else if (userinput[0] == "tgnoprint") {
+            no_print_every_instr = !no_print_every_instr;
+        } else if (userinput[0] == "modify") {
+            S.addrNoHook(Convert.ToUInt16(userinput[1], 16)) = Convert.ToByte(userinput[2], 16);
+        } else if (userinput[0] == "watchaddr") {
+            watch_addr.Add(Convert.ToUInt16(userinput[1], 16));
+        }
         goto takeInput;
     }
 
     public void IncrementPC() {
-        // if (!C.no_modify_pc) {
-            C.incrementPC(getInstruction(opcode).bytes);
-            // full_jump = false;
-        // }
+        C.incrementPC(getInstruction(opcode).bytes);
     }
 }
