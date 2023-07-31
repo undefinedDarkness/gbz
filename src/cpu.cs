@@ -1182,21 +1182,154 @@ class CPU
             case 0x4:
                 cb_rr(op_operand, (ref byte x) =>
                 {
-                    // SWAP
-                    F.negative = false;
-                    F.half_carry = false;
-                    F.carry = false;
-                    x = (byte)(x >> 4 | x << 4);
-                    F.zero = x == 0;
+                    F.half_carry=true;
+                    F.negative=false;
+                    F.zero = (x & 1) == 0;
+                    return;
                 },
                 (ref byte x) =>
                 {
                     // SRL
                     F.negative = false;
-                    F.half_carry = false;
-                    F.carry = (x & 1 << 0) == 1;
-                    x >>= 1;
-                    F.zero = x == 0;
+                    F.half_carry = true;
+                    F.zero = (x & 1 << 1) == 0;
+                });
+                return;
+            case 0x5:
+                cb_rr(op_operand, (ref byte x) =>
+                {
+                    F.half_carry = true;
+                    F.negative = false;
+                    F.zero = (x & 1 << 2) == 0;
+                    return;
+                },
+                (ref byte x) =>
+                {
+                    // SRL
+                    F.negative = false;
+                    F.half_carry = true;
+                    F.zero = (x & 1 << 3) == 0;
+                });
+                return;
+            case 0x6:
+                cb_rr(op_operand, (ref byte x) =>
+                {
+                    F.half_carry = true;
+                    F.negative = false;
+                    F.zero = (x & 1 << 4) == 0;
+                    return;
+                },
+                (ref byte x) =>
+                {
+                    // SRL
+                    F.negative = false;
+                    F.half_carry = true;
+                    F.zero = (x & 1 << 5) == 0;
+                });
+            
+                return;
+            case 0x7:
+                cb_rr(op_operand, (ref byte x) =>
+                {
+                    F.half_carry = true;
+                    F.negative = false;
+                    F.zero = (x & 1 << 6) == 0;
+                    return;
+                },
+                (ref byte x) =>
+                {
+                    // SRL
+                    F.negative = false;
+                    F.half_carry = true;
+                    F.zero = (x & 1 << 7) == 0;
+                });
+                return;
+            case 0x8:
+                cb_rr(op_operand, (ref byte x) =>
+                {
+                    x = (byte)(x & ~(1 << 0));
+                    return;
+                },
+                (ref byte x) =>
+                {
+                    x = (byte)(x & ~(1 << 1));
+                });
+                return;
+            case 0x9:
+                cb_rr(op_operand, (ref byte x) =>
+                {
+                    x = (byte)(x & ~(1 << 2));
+                    return;
+                },
+                (ref byte x) =>
+                {
+                    x = (byte)(x & ~(1 << 3));
+                });
+                return;
+            case 0xa:
+                cb_rr(op_operand, (ref byte x) =>
+                {
+                    x = (byte)(x & ~(1 << 4));
+                    return;
+                },
+                (ref byte x) =>
+                {
+                    x = (byte)(x & ~(1 << 5));
+                });
+                return;
+            case 0xb:
+                cb_rr(op_operand, (ref byte x) =>
+                {
+                    x = (byte)(x & ~(1 << 6));
+                    return;
+                },
+                (ref byte x) =>
+                {
+                    x = (byte)(x & ~(1 << 7));
+                });
+                return;
+            case 0xc:
+                cb_rr(op_operand, (ref byte x) =>
+                {
+                    x = (byte)(x | (1 << 0));
+                    return;
+                },
+                (ref byte x) =>
+                {
+                    x = (byte)(x | (1 << 1));
+                });
+                return;
+            case 0xd:
+                cb_rr(op_operand, (ref byte x) =>
+                {
+                    x = (byte)(x | (1 << 2));
+                    return;
+                },
+                (ref byte x) =>
+                {
+                    x = (byte)(x | (1 << 3));
+                });
+                return;
+            case 0xe:
+                cb_rr(op_operand, (ref byte x) =>
+                {
+                    x = (byte)(x | (1 << 4));
+                    return;
+                },
+                (ref byte x) =>
+                {
+                    x = (byte)(x | (1 << 5));
+                });
+                return;
+            case 0xf:
+                cb_rr(op_operand, (ref byte x) =>
+                {
+                    x = (byte)(x | (1 << 6));
+                    return;
+                },
+                (ref byte x) =>
+                {
+                    x = (byte)(x | (1 << 7));
                 });
                 return;
         }

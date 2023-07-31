@@ -21,7 +21,7 @@ For interrupts to work, they first need to be **enabled** at all (operations EI 
 - [X] Test 6 ld r,r
 - [X] Test 7 jr,jp,call,ret,rst
 - [X] Test 8 misc instrs
-- [ ] Test 9 op r,r
+- [X] Test 9 op r,r
 - [ ] Test 10 bitops
 - [ ] Test 11 op a,(hl)
 
