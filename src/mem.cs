@@ -59,6 +59,11 @@ class STATE {
 
         if (idx >= 0xd000 && idx <= 0xdfff)
         {
+            if (idx - 0xd000 >= WRAM2.Length)
+            {
+                Console.WriteLine("{0:X4} is in bounds for WRAM1 but does not fit", idx);
+                return ref garbage;
+            }
             return ref WRAM2[idx - 0xd000];
         }
 

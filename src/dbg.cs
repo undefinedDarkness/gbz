@@ -59,6 +59,7 @@ class Debugger {
     bool noprintNoOp = true;
     HashSet<ushort> breakpoints = new HashSet<ushort>();
     HashSet<byte> breakinstrs = new HashSet<byte>();
+    HashSet<int> breakinstrcount = new HashSet<int>();
 
     void printMemoryAtAddress(int addr) {
         for (int i = 0; i < 10; i++) {
@@ -76,7 +77,7 @@ class Debugger {
         Console.WriteLine();
     }
 
-    void printState(int opcode, bool inBreakpoint) {
+    string getInstructionPretty(int opcode) {
         string operands = "";
         var instruction = getInstruction(opcode);
         string name = instruction.mnemonic;
@@ -111,8 +112,13 @@ class Debugger {
                 }
             }
         }
-        string leftFmt = string.Format("{0:x4}: {3:x2} {1}{2}", inBreakpoint ? $"\x1b[31m{C.PC.ToString("x4")}\x1b[0m" : C.PC, color(instructions[opcode].mnemonic), operands, opcode);
-        string rightFmt = string.Format("AF:{0:X4} BC:{1:X4} DE:{2:X4} HL:{4:X4} SP:{3:X4}", C.AF, C.BC, C.DE, C.SP, C.HL).PadLeft(160 - (4 + 2 + 2 + 1 + operands.Length));
+        return String.Format("{0:x2} {1}{2}", opcode, color(name), operands);
+    }
+
+    void printState(int opcode, bool inBreakpoint) {
+        // int operandLength = 0;
+        string leftFmt = string.Format("{0:x4}: {1}", inBreakpoint ? $"\x1b[31m{C.PC.ToString("x4")}\x1b[0m" : C.PC, getInstructionPretty(opcode));
+        string rightFmt = string.Format("[IC:{0}] AF:{1:X4} BC:{2:X4} DE:{3:X4} HL:{4:X4} SP:{5:X4}", C.instructionCounter, C.AF, C.BC, C.DE, C.SP, C.HL).PadLeft(160 - leftFmt.Length);
         System.Console.WriteLine("{0}{1}", leftFmt, rightFmt);
     }
 
@@ -143,11 +149,12 @@ class Debugger {
     }
 
     HashSet<ushort> watch_addr = new HashSet<ushort>( 0xc800 );
+    bool print_watch_addr = false;
     public void memAccessHook(int addr) {
         if (watch_addr.Contains((ushort)addr)) {
             var instr = getInstruction(opcode);
-            Console.WriteLine("\x1b[1mAccess to {0:X4} by op: ({3:X4}) {1} @ {2:X4}\x1b[0m", addr, instr.mnemonic, C.PC, instr.opcode);
-            stepDebug=true;
+            Console.WriteLine("\x1b[1mAccess to\x1b[0m {0:X4} by {1} @ {2} & PC:{3:X4}", addr, getInstructionPretty(opcode), C.instructionCounter, C.PC);
+            print_watch_addr=true;
         }
     }
 
@@ -158,7 +165,7 @@ class Debugger {
     int contN = 0;
     public void DebugTick() {
         opcode = S.addrNoHook(C.PC);
-        bool inBreakpoint = breakpoints.Contains(C.PC);// || breakinstrs.Contains(opcode);
+        bool inBreakpoint = breakpoints.Contains(C.PC) || breakinstrs.Contains(opcode) || breakinstrcount.Contains(C.instructionCounter);
         if (inBreakpoint) {
             Console.WriteLine("reached breakpoint");
             stepDebug = true;
@@ -189,6 +196,13 @@ class Debugger {
         if (inBreakpoint || !no_print_every_instr)
             printState(opcode, inBreakpoint);
 
+        if (print_watch_addr) {
+            foreach (ushort addr in watch_addr) {
+                Console.WriteLine("{0:X4}: {1:X2} ", addr, S.addrNoHook(addr));
+            }
+            print_watch_addr=false;
+        }
+
         if (!stepDebug)
             return;
 
@@ -215,6 +229,8 @@ takeInput:
             Console.WriteLine("Added breakpoint 0x{0:X4}", bp);
         } else if (userinput[0] == "bins") {
             breakinstrs.Add(System.Convert.ToByte(userinput[1], 16));
+        } else if (userinput[0] == "bic") {
+            breakinstrcount.Add(Int32.Parse(userinput[1]));
         }else if (userinput[0] == "ex") {
             System.Environment.Exit(0);
         } else if (userinput[0] == "cont" || userinput[0] == "next") {
@@ -275,6 +291,10 @@ takeInput:
             S.addrNoHook(Convert.ToUInt16(userinput[1], 16)) = Convert.ToByte(userinput[2], 16);
         } else if (userinput[0] == "watchaddr") {
             watch_addr.Add(Convert.ToUInt16(userinput[1], 16));
+        }else if (userinput[0] == "rmw") {
+            watch_addr.Remove(Convert.ToUInt16(userinput[1], 16));
+        } else if (userinput[0] == "SETA") {
+            C.SETA(Convert.ToByte(userinput[1], 16));
         }
         goto takeInput;
     }
@@ -292,6 +312,7 @@ takeInput:
     // 7 = 0111 Carry | Half Carry | Subtraction 
     // 3 = 0011 Carry | Half Carry |
     // 2 = 0010       | Half Carry |
+    // 1 = 0001 Carry |            |             |
 
     public void IncrementPC() {
         C.incrementPC(getInstruction(opcode).bytes);

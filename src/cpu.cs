@@ -137,6 +137,8 @@ class CPU
         }
     }
 
+    public int instructionCounter { get; private set; } = -1;
+
     // ushort _PC = 0x0100;
     public UInt16 PC = 0x0100;
 
@@ -162,6 +164,7 @@ class CPU
 
     public void reset()
     {
+        instructionCounter = -1;
         PC = 0x0100;
         SP = 0xFFFE;
         A = 0x01;
@@ -188,16 +191,14 @@ class CPU
 
     void writeShortAtSP(ushort v)
     {
-        SP -= 2;
-        S.addr(SP) = (byte)(v & 0x00ff);
-        S.addr((ushort)(SP + 1)) = (byte)(v >> 8);
+        S.addr(--SP) = (byte)(v >> 8);
+        S.addr(--SP) = (byte)(v & 0x00ff);
     }
 
     ushort getShortAtSP()
     {
-        byte a = S.addr(SP);
-        byte b = S.addr((ushort)(SP + 1));
-        SP += 2;
+        byte a = S.addr(SP++);
+        byte b = S.addr(SP++);
         return (ushort)(b << 8 | a);
     }
 
@@ -422,6 +423,7 @@ class CPU
     public void Tick()
     {
         cache_store();
+        instructionCounter += 1;
         var op = S.addr(PC);
         switch (op)
         {
@@ -456,6 +458,15 @@ class CPU
             case 0x23:
                 HL++;
                 return;
+            case 0x0b:
+                BC--;
+                return;
+            case 0x1b:
+                DE--;
+                return;
+            case 0x2B:
+                HL--;
+                return;
             case 0x26:
                 H = getByteAtPC();
                 return;
@@ -484,6 +495,44 @@ class CPU
                 return;
             case 0x3b:
                 SP--;
+                return;
+            case 0x09:
+                HL = add_wide(HL, BC);
+                return;
+            case 0x19:
+                HL = add_wide(HL, DE);
+                return;
+            case 0x38:
+                sbyte rel = (sbyte)getByteAtPC();
+                if (F.carry) {
+                    PC = (ushort)(PC + rel);
+                    // no_modify_pc=true;
+                }
+                return;
+            case 0xCA:
+                if (F.zero) {
+                    PC = getShortAtPC();
+                    no_modify_pc=true;
+                }
+                return;
+            case 0xDA:
+                if (F.carry) {
+                    PC = getShortAtPC();
+                    no_modify_pc=true;
+                }
+                return;
+            case 0xCC:
+                if (F.zero) {
+                    writeShortAtSP(PC);
+                    PC = getShortAtPC();
+                    no_modify_pc=true;
+                }
+                return;
+            case 0xD2:
+                if (!F.carry) {
+                    PC = getShortAtPC();
+                    no_modify_pc=true;
+                }
                 return;
             case 0x39:
                 // var ohl = HL;
@@ -521,8 +570,8 @@ class CPU
                 // if (DE == 0xc800)
                 S.addr(DE) = A;
                 // S.addr(DE) = A;
-                if (DE == 0xc800)
-                    Console.WriteLine("LD DE, A WROTE {0:X2} to {1:X4}", A, DE);
+                // if (DE == 0xc800)
+                    // Console.WriteLine("LD DE, A WROTE {0:X2} to {1:X4}", A, DE);
                 return;
             // --
             case 0x1c:
@@ -800,9 +849,10 @@ class CPU
             case 0xd6:
                 sub_reg(ref A, getByteAtPC());
                 return;
-            case 0xfa:
+            case 0xfa: {
                 A = S.addr(getShortAtPC());
                 return;
+            }
             case 0xe6:
                 and_reg(ref A, getByteAtPC());
                 return;
@@ -824,6 +874,33 @@ class CPU
             //     return;
             case 0xCB:
                 wideInstruction();
+                return;
+
+            case 0xd4:
+                if (!F.carry) {
+                    writeShortAtSP(PC);
+                    PC = getShortAtPC();
+                    no_modify_pc=true;
+                }
+                return;
+
+            case 0xf2:
+                A = S.addr((ushort)(0xff00 + C));
+                // no_modify_pc=true;
+                return;
+            case 0xdc:
+                if (F.carry) {
+                    writeShortAtSP(PC);
+                    PC = getShortAtPC();
+                    no_modify_pc=true;
+                }
+                return;
+            case 0xd9:
+                PC = getShortAtSP();
+                S.interrupts.enabled=true;
+                return;
+            case 0x34:
+                S.addr(HL)++;
                 return;
             default:
                 // Console.WriteLine("[!!] Unexpected instruction: {0,2:x}", op);
@@ -977,6 +1054,7 @@ class CPU
                 });
                 return;
         }
+        // instructionCounter += 1;
     }
 
     public bool found_unimplemented_instr = false;
@@ -991,5 +1069,9 @@ class CPU
             // Console.WriteLine("skipping increment cuz of jump / call / ret");
             no_modify_pc = false;
         }
+    }
+
+    public void SETA(byte v) {
+        A=v;
     }
 }
