@@ -317,6 +317,7 @@ takeInput:
     // C = 1100       |            | Subtraction | Zero
     // B = 1011 Carry | Half Carry |             | Zero
     // A = 1010       | Half Carry |             | Zero
+    // 8 = 1000       |            |             | Zero
     // 7 = 0111 Carry | Half Carry | Subtraction 
     // 3 = 0011 Carry | Half Carry |
     // 2 = 0010       | Half Carry |
