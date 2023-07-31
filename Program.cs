@@ -4,7 +4,7 @@
     public static void Main(string[] args)
     {
 
-        var GB = new GBEmulator("gb-test-roms/cpu_instrs/individual/07-jr,jp,call,ret,rst.gb");
+        var GB = new GBEmulator("gb-test-roms/cpu_instrs/individual/08-misc instrs.gb");
         GB.run();
         Console.WriteLine("dafaq");
     }

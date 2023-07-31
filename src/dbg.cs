@@ -116,20 +116,16 @@ class Debugger {
     }
 
     void printState(int opcode, bool inBreakpoint) {
-        // int operandLength = 0;
+        int operandLength = 0;
         string leftFmt = string.Format("{0:x4}: {1}", inBreakpoint ? $"\x1b[31m{C.PC.ToString("x4")}\x1b[0m" : C.PC, getInstructionPretty(opcode));
-        string rightFmt = string.Format("[IC:{0}] AF:{1:X4} BC:{2:X4} DE:{3:X4} HL:{4:X4} SP:{5:X4}", C.instructionCounter, C.AF, C.BC, C.DE, C.SP, C.HL).PadLeft(160 - leftFmt.Length);
-        System.Console.WriteLine("{0}{1}", leftFmt, rightFmt);
+        string rightFmt = string.Format("[IC:{0}] AF:{1:X4} BC:{2:X4} DE:{3:X4} HL:{4:X4} SP:{5:X4}", C.instructionCounter, C.AF, C.BC, C.DE, C.SP, C.HL);
+        System.Console.WriteLine("{0}\t{1}", leftFmt, rightFmt);
+        // System.Console.WriteLine(getStateRepr());
     }
 
-    bool verifyCorrectState() {
-        string? fromLog = logfile.ReadLine();
-        if (fromLog == null) {
-            Console.WriteLine("Ran out of log - assume correct\n");
-            System.Environment.Exit(0);
-        }
+    string getStateRepr() {
         var af = C.AF;
-        string fromState = String.Format("A: {0:X2} F: {1:X2} B: {2:X2} C: {3:X2} D: {4:X2} E: {5:X2} H: {6:X2} L: {7:X2} SP: {8:X4} PC: 00:{9:X4} ({10:X2} {11:X2} {12:X2} {13:X2})", 
+        return String.Format("A: {0:X2} F: {1:X2} B: {2:X2} C: {3:X2} D: {4:X2} E: {5:X2} H: {6:X2} L: {7:X2} SP: {8:X4} PC: 00:{9:X4} ({10:X2} {11:X2} {12:X2} {13:X2})",
             af >> 8,
             af & 0x00ff,
             C.BC >> 8,
@@ -141,6 +137,16 @@ class Debugger {
             C.SP,
             C.PC,
             S.addrNoHook(C.PC), S.addrNoHook((ushort)(C.PC + 1)), S.addrNoHook((ushort)(C.PC + 2)), S.addrNoHook((ushort)(C.PC + 3)));
+    }
+
+    bool verifyCorrectState() {
+        // if (opcode == 0x00) 
+        string? fromLog = logfile.ReadLine();
+        if (fromLog == null) {
+            Console.WriteLine("Ran out of log - assume correct\n");
+            System.Environment.Exit(0);
+        }
+        var fromState = getStateRepr();
         if (fromLog != fromState) {
             Console.WriteLine("\x1b[31mDETECTED DISCREPANCY @ {0:X4}:\x1b[0m\n\tLOG: {1}\n\tSTA: {2}", C.PC, fromLog, fromState);
             return false;
@@ -295,6 +301,8 @@ takeInput:
             watch_addr.Remove(Convert.ToUInt16(userinput[1], 16));
         } else if (userinput[0] == "SETA") {
             C.SETA(Convert.ToByte(userinput[1], 16));
+        } else if (userinput[0] == "IC") {
+            Console.WriteLine("{0}", C.instructionCounter);
         }
         goto takeInput;
     }

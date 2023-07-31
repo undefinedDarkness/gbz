@@ -191,6 +191,7 @@ class CPU
 
     void writeShortAtSP(ushort v)
     {
+        // Console.WriteLine("WRITING {0:X4} to SP @ PC: {1:X4} IC: {2}", v, PC, instructionCounter);
         S.addr(--SP) = (byte)(v >> 8);
         S.addr(--SP) = (byte)(v & 0x00ff);
     }
@@ -432,16 +433,32 @@ class CPU
             case 0x01:
                 BC = getShortAtPC();
                 return;
+            case 0x02:
+                S.addr(getByteAtPC()) = A;
+                return;
+            case 0x03:
+                BC++;
+                return;
+            case 0x0b:
+                BC--;
+                return;
+            case 0x08:
+                var address = getShortAtPC();
+                S.addr(address++) = (byte)(SP & 0x00ff);
+                S.addr(address) = (byte)(SP >> 8);
+                return;
+            case 0x04:
+                inc_reg(ref B);
+                return;
+            case 0x0c:
+                inc_reg(ref C);
+                return;
             case 0x18:
-                // JUMP RELATIVE
+                // JR i8
                 PC = (ushort)(PC + (sbyte)getByteAtPC());
                 // no_modify_pc = true;
                 return;
-            case 0xc9:
-                // JUMP RELATIVE
-                PC = getShortAtSP();
-                no_modify_pc = true;
-                return;
+            
             case 0x36:
                 S.addr(HL) = getByteAtPC();
                 return;
@@ -449,6 +466,7 @@ class CPU
                 D = getByteAtPC();
                 return;
             case 0xc3:
+                // JP u16
                 PC = getShortAtPC();
                 no_modify_pc = true;
                 return;
@@ -458,9 +476,7 @@ class CPU
             case 0x23:
                 HL++;
                 return;
-            case 0x0b:
-                BC--;
-                return;
+           
             case 0x1b:
                 DE--;
                 return;
@@ -473,9 +489,7 @@ class CPU
             case 0x2d:
                 dec_reg(ref L);
                 return;
-            case 0x03:
-                BC++;
-                return;
+
             case 0x13:
                 DE++;
                 return;
@@ -488,11 +502,7 @@ class CPU
             case 0x11:
                 DE = getShortAtPC();
                 return;
-            case 0x08:
-                var address = getShortAtPC();
-                S.addr(address++) = (byte)(SP & 0x00ff);
-                S.addr(address) = (byte)(SP >> 8);
-                return;
+   
             case 0x3b:
                 SP--;
                 return;
@@ -503,6 +513,7 @@ class CPU
                 HL = add_wide(HL, DE);
                 return;
             case 0x38:
+                // JR C i8
                 sbyte rel = (sbyte)getByteAtPC();
                 if (F.carry) {
                     PC = (ushort)(PC + rel);
@@ -521,14 +532,9 @@ class CPU
                     no_modify_pc=true;
                 }
                 return;
-            case 0xCC:
-                if (F.zero) {
-                    writeShortAtSP(PC);
-                    PC = getShortAtPC();
-                    no_modify_pc=true;
-                }
-                return;
+            
             case 0xD2:
+                // JP NC u16
                 if (!F.carry) {
                     PC = getShortAtPC();
                     no_modify_pc=true;
@@ -653,7 +659,7 @@ class CPU
             case 0x20:
                 if (!F.zero)
                 {
-                    // JR
+                    // JR NZ, i8
                     PC = (ushort)(PC + (sbyte)getByteAtPC());
                     // no_modify_pc = true;
                 }
@@ -666,22 +672,19 @@ class CPU
                 inc_reg(ref A);
                 return;
             case 0xc2:
+                // JP NZ u16
                 if (!F.zero)
                 {
+                    
                     PC = getShortAtPC();
                     no_modify_pc = true;
                 }
                 return;
-            case 0x04:
-                inc_reg(ref B);
-                return;
-            case 0x0c:
-                inc_reg(ref C);
-                return;
+ 
             case 0x28:
                 if (F.zero)
                 {
-                    // JR
+                    // JR Z, i8
                     PC = (ushort)(PC + (sbyte)(getByteAtPC()));
                     // no_modify_pc = true;
                 }
@@ -689,7 +692,7 @@ class CPU
             case 0x30:
                 if (!F.carry)
                 {
-                    // JR
+                    // JR NC, i8
                     PC = (ushort)(PC + (sbyte)(getByteAtPC()));
                     // no_modify_pc = true;
                 }
@@ -731,18 +734,7 @@ class CPU
             case 0x31:
                 SP = getShortAtPC();
                 return;
-            case 0xff:
-                // RST 38h
-                writeShortAtSP(PC);
-                PC = 0x0000 + 0x38;
-                no_modify_pc = true;
-                return;
-            case 0xef:
-                // RST 38h
-                writeShortAtSP(PC);
-                PC = 0x0000 + 0x28;
-                no_modify_pc = true;
-                return;
+
             case 0xe5:
                 writeShortAtSP(HL);
                 return;
@@ -767,18 +759,61 @@ class CPU
             case 0xc1:
                 BC = getShortAtSP();
                 return;
+            #region RST INSTRUCTIONS
+            case 0xff:
+                // RST 38h
+                writeShortAtSP((ushort)(PC + 1));
+                PC = 0x0000 + 0x38;
+                no_modify_pc = true;
+                return;
+            case 0xef:
+                // RST 28h
+                writeShortAtSP((ushort)(PC + 1));
+                PC = 0x0000 + 0x28;
+                no_modify_pc = true;
+                return;
             case 0xdf:
                 // RST 38h
-                writeShortAtSP(PC);
+                // Console.WriteLine("RST: {0:X4}", PC + 1);
+                writeShortAtSP((ushort)(PC + 1));
                 PC = 0x0000 + 0x18;
                 no_modify_pc = true;
                 return;
+            case 0xd7:
+                // RST 10h
+                // Console.WriteLine("RST: {0:X4}", PC+1);
+                writeShortAtSP((ushort)(PC + 1));
+                PC = 0x0000 + 0x10;
+                no_modify_pc=true;
+                return;
+            case 0xe7:
+                // RST 20h
+                // Console.WriteLine("RST: {0:X4}", PC+1);
+                writeShortAtSP((ushort)(PC + 1));
+                PC = 0x0000 + 0x20;
+                no_modify_pc=true;
+                return;
+            case 0xf7:
+                // RST 30h
+                // Console.WriteLine("RST: {0:X4}", PC);
+                writeShortAtSP((ushort)(PC + 1));
+                PC = 0x0000 + 0x30;
+                no_modify_pc=true;
+                return;
             case 0xcf:
                 // RST 38h
-                writeShortAtSP(PC);
+                // Console.WriteLine("RST: {0:X4}", PC);
+                writeShortAtSP((ushort)(PC + 1));
                 PC = 0x0000 + 0x08;
                 no_modify_pc = true;
                 return;
+            case 0xc7:
+                // Console.WriteLine("RST: {0:X4}", PC);
+                writeShortAtSP((ushort)(PC + 1));
+                PC = 0x0000 + 0x00;
+                no_modify_pc=true;
+                return;
+            #endregion
             case 0xEA:
                 var addr = getShortAtPC();
                 S.addr(addr) = A;
@@ -799,50 +834,113 @@ class CPU
                 E = getByteAtPC();
                 return;
 
-            case 0xCD:
-                writeShortAtSP((ushort)(PC + 3));
-                PC = getShortAtPC();
+            #region RET INSTRUCTIONS
+            case 0xc9:
+                // RET
+                PC = getShortAtSP();
+                // Console.WriteLine("RET: {0:X4}", PC);
                 no_modify_pc = true;
                 return;
             case 0xc8:
+                // RET Z
                 if (F.zero)
                 {
                     PC = getShortAtSP();
+                    // Console.WriteLine("RET: {0:X4}", PC);
                     no_modify_pc = true;
                 }
                 return;
             case 0xc0:
-                if (F.zero)
+                // RET NZ
+                if (!F.zero)
                 {
                     PC = getShortAtSP();
+                    // Console.WriteLine("RET: {0:X4}", PC);
                     no_modify_pc = true;
                 }
                 return;
-            case 0xd8:
-                if (F.carry)
-                {
-                    PC = getShortAtSP();
-                    no_modify_pc = true;
-                }
-                return;
+
             case 0xd0:
+                // RET NC
                 if (!F.carry)
                 {
                     PC = getShortAtSP();
+                    // Console.WriteLine("RET: {0:X4}", PC);
                     no_modify_pc = true;
                 }
                 return;
+
+            case 0xd8:
+                // RET C
+                if (F.carry)
+                {
+                    PC = getShortAtSP();
+                    // Console.WriteLine("RET: {0:X4}", PC);
+                    no_modify_pc = true;
+                }
+                return;
+            case 0xd9:
+                // RETI
+                PC = (ushort)(getShortAtSP() + 0);
+                S.interrupts.enabled = true;
+                // Console.WriteLine("PC: {0:X4}", PC);
+                no_modify_pc=true;
+                return;
+            #endregion
+            
             case 0x35:
                 dec_reg(ref S.addr(HL));
                 return;
-            case 0xC4:
-                if (!F.zero)
+
+            #region CALL INSTRUCTIONS
+            case 0xCD:
+                // Console.WriteLine("CALL: {0:X4}", (ushort)(PC + 3));
+                writeShortAtSP((ushort)(PC + 3));
+                PC = getShortAtPC();
+                no_modify_pc = true;
+                
+                return;
+            case 0xd4:
+                if (!F.carry)
                 {
+                    // Console.WriteLine("CALL: {0:X4}", (ushort)(PC + 3));
                     writeShortAtSP((ushort)(PC + 3));
                     PC = getShortAtPC();
                     no_modify_pc = true;
                 }
                 return;
+
+            case 0xCC:
+                if (F.zero)
+                {
+                    // Console.WriteLine("CALL: {0:X4}", (ushort)(PC + 3));
+                    writeShortAtSP((ushort)(PC + 3));
+                    PC = getShortAtPC();
+                    no_modify_pc = true;
+                }
+                return;
+
+            case 0xC4:
+                // CALL NZ, u16
+                if (!F.zero)
+                {
+                    // Console.WriteLine("CALL: {0:X4}", (ushort)(PC + 3));
+                    writeShortAtSP((ushort)(PC + 3));
+                    PC = getShortAtPC();
+                    no_modify_pc = true;
+                }
+                return;
+
+            case 0xdc:
+                if (F.carry)
+                {
+                    // Console.WriteLine("CALL: {0:X4}", (ushort)(PC + 3));
+                    writeShortAtSP((ushort)(PC + 3));
+                    PC = getShortAtPC();
+                    no_modify_pc = true;
+                }
+                return;
+            #endregion
             case 0xc6:
                 add_reg(ref A, getByteAtPC());
                 return;
@@ -876,29 +974,15 @@ class CPU
                 wideInstruction();
                 return;
 
-            case 0xd4:
-                if (!F.carry) {
-                    writeShortAtSP(PC);
-                    PC = getShortAtPC();
-                    no_modify_pc=true;
-                }
-                return;
-
             case 0xf2:
                 A = S.addr((ushort)(0xff00 + C));
                 // no_modify_pc=true;
                 return;
-            case 0xdc:
-                if (F.carry) {
-                    writeShortAtSP(PC);
-                    PC = getShortAtPC();
-                    no_modify_pc=true;
-                }
+
+            case 0xe2:
+                S.addr((ushort)(0xff00 + C)) = A;
                 return;
-            case 0xd9:
-                PC = getShortAtSP();
-                S.interrupts.enabled=true;
-                return;
+    
             case 0x34:
                 S.addr(HL)++;
                 return;
